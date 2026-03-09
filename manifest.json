@@ -1,0 +1,11 @@
+{
+  "id": "smart-note-placement",
+  "name": "Smart Note Placement",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "Intercepts wiki-link clicks and redirects file creation based on prefix characters.",
+  "author": "connrado",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": true
+}
