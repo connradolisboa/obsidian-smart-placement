@@ -1,4 +1,4 @@
-import { App, Notice, TFile, normalizePath } from "obsidian";
+import { App, Editor, Notice, TFile, normalizePath } from "obsidian";
 import type { SmartNotePlacementSettings } from "./settings";
 import { resolveFolderNoteTarget } from "./folderNoteUtils";
 
@@ -61,23 +61,44 @@ async function rewriteLink(
 }
 
 /**
- * Handle a prefixed wiki-link click.
+ * Extract the link text under the cursor in the given editor.
+ * Returns the link target (before any | alias or # heading), or null if the
+ * cursor is not inside a wiki-link.
+ */
+export function getLinkTextAtCursor(editor: Editor): string | null {
+  const cursor = editor.getCursor();
+  const line = editor.getLine(cursor.line);
+  const ch = cursor.ch;
+
+  // Match [[linkTarget]], [[linkTarget|alias]], [[linkTarget#heading]]
+  const regex = /\[\[([^|\]#]+)/g;
+  let match;
+  while ((match = regex.exec(line)) !== null) {
+    const linkStart = match.index;
+    const closeIdx = line.indexOf("]]", linkStart + 2);
+    const linkEnd = closeIdx >= 0 ? closeIdx + 2 : line.length;
+    if (ch >= linkStart && ch <= linkEnd) {
+      return match[1].trim();
+    }
+  }
+  return null;
+}
+
+/**
+ * Core logic: create/open a prefixed wiki-link target.
  *
- * @param app        Obsidian App instance
- * @param settings   Plugin settings
- * @param target     The clicked HTML element
- * @param evt        The original MouseEvent (so we can call preventDefault)
+ * @param app          Obsidian App instance
+ * @param settings     Plugin settings
+ * @param rawLinkText  The raw link text (e.g. "&My Note")
+ * @param evt          The triggering event (MouseEvent or KeyboardEvent)
  * @returns true if the event was handled, false to let Obsidian handle it
  */
-export async function handleLinkClick(
+export async function processLinkText(
   app: App,
   settings: SmartNotePlacementSettings,
-  target: HTMLElement,
-  evt: MouseEvent
+  rawLinkText: string,
+  evt: Event
 ): Promise<boolean> {
-  const rawLinkText = extractLinkText(target);
-  if (!rawLinkText) return false;
-
   const { sameFolderPrefix, folderNotePrefix } = settings;
 
   let prefix: string | null = null;
@@ -158,4 +179,24 @@ export async function handleLinkClick(
 
   await app.workspace.openLinkText(fileName, currentSourceFile.path);
   return true;
+}
+
+/**
+ * Handle a prefixed wiki-link click.
+ *
+ * @param app        Obsidian App instance
+ * @param settings   Plugin settings
+ * @param target     The clicked HTML element
+ * @param evt        The original MouseEvent (so we can call preventDefault)
+ * @returns true if the event was handled, false to let Obsidian handle it
+ */
+export async function handleLinkClick(
+  app: App,
+  settings: SmartNotePlacementSettings,
+  target: HTMLElement,
+  evt: MouseEvent
+): Promise<boolean> {
+  const rawLinkText = extractLinkText(target);
+  if (!rawLinkText) return false;
+  return processLinkText(app, settings, rawLinkText, evt);
 }
