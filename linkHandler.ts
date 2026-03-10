@@ -1,6 +1,35 @@
 import { App, Editor, Notice, TFile, normalizePath } from "obsidian";
 import type { SmartNotePlacementSettings } from "./settings";
+import type { Logger } from "./logger";
 import { resolveFolderNoteTarget } from "./folderNoteUtils";
+
+type PrefixConfig = {
+  kind: "sameFolder" | "folderNote" | "custom";
+  folder?: string;
+  template?: string;
+};
+
+function resolvePrefix(
+  settings: SmartNotePlacementSettings,
+  rawLinkText: string
+): { prefix: string; config: PrefixConfig } | null {
+  // Sort longest-first so "&&" isn't shadowed by "&"
+  const sorted = [...settings.customPrefixes].sort(
+    (a, b) => b.prefix.length - a.prefix.length
+  );
+  for (const entry of sorted) {
+    if (entry.prefix && rawLinkText.startsWith(entry.prefix)) {
+      return { prefix: entry.prefix, config: { kind: "custom", folder: entry.folder, template: entry.template } };
+    }
+  }
+  if (rawLinkText.startsWith(settings.sameFolderPrefix)) {
+    return { prefix: settings.sameFolderPrefix, config: { kind: "sameFolder", template: settings.sameFolderTemplate } };
+  }
+  if (rawLinkText.startsWith(settings.folderNotePrefix)) {
+    return { prefix: settings.folderNotePrefix, config: { kind: "folderNote", template: settings.folderNoteTemplate } };
+  }
+  return null;
+}
 
 /**
  * Extract the raw link text from a clicked internal-link element.
@@ -32,31 +61,66 @@ function linkTargetExists(app: App, linkText: string, sourcePath: string): boole
 }
 
 /**
- * Rewrite the wiki-link in the source file, replacing the prefixed form with
- * a clean aliased link: [[folderPath/FileName|FileName]]
+ * Rewrite the wiki-link in the source file using offset-based replacement
+ * from metadataCache when available, with regex fallback.
  */
 async function rewriteLink(
   app: App,
   sourceFile: TFile,
   originalLinkText: string,
   newFilePath: string,
-  displayName: string
+  displayName: string,
+  logger: Logger
 ): Promise<void> {
-  const content = await app.vault.read(sourceFile);
-
-  // Match [[& File Name]], [[@ File Name]], [[&File Name]], etc.
-  // We escape the prefix for use in regex
-  const escapedOriginal = originalLinkText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(
-    `\\[\\[${escapedOriginal}\\]\\]`,
-    "g"
-  );
-
+  const cache = app.metadataCache.getFileCache(sourceFile);
   const newLink = `[[${newFilePath}|${displayName}]]`;
-  const updated = content.replace(pattern, newLink);
 
-  if (updated !== content) {
-    await app.vault.modify(sourceFile, updated);
+  if (cache?.links?.length) {
+    const matches = cache.links.filter(
+      (lc) => lc.original === `[[${originalLinkText}]]`
+    );
+    if (matches.length > 0) {
+      const content = await app.vault.read(sourceFile);
+      // Process end-to-start so earlier offsets aren't shifted by replacements
+      const sorted = [...matches].sort(
+        (a, b) => b.position.start.offset - a.position.start.offset
+      );
+      let result = content;
+      for (const lc of sorted) {
+        const s = lc.position.start.offset;
+        const e = lc.position.end.offset;
+        result = result.slice(0, s) + newLink + result.slice(e);
+      }
+      if (result !== content) await app.vault.modify(sourceFile, result);
+      return;
+    }
+    logger.debug("rewriteLink: cache miss for", originalLinkText, "— regex fallback");
+  } else {
+    logger.debug("rewriteLink: no cache — regex fallback");
+  }
+
+  // Regex fallback — preserved for cache-miss after folder-note promotion
+  const content = await app.vault.read(sourceFile);
+  const esc = originalLinkText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const updated = content.replace(new RegExp(`\\[\\[${esc}\\]\\]`, "g"), newLink);
+  if (updated !== content) await app.vault.modify(sourceFile, updated);
+}
+
+/**
+ * Apply a template file's content to a newly created file.
+ */
+async function applyTemplate(
+  app: App,
+  newFile: TFile,
+  templatePath: string,
+  logger: Logger
+): Promise<void> {
+  const tmplFile = app.vault.getAbstractFileByPath(templatePath);
+  if (tmplFile instanceof TFile) {
+    const content = await app.vault.read(tmplFile);
+    await app.vault.modify(newFile, content);
+  } else {
+    logger.debug("Template file not found:", templatePath);
   }
 }
 
@@ -86,29 +150,18 @@ export function getLinkTextAtCursor(editor: Editor): string | null {
 
 /**
  * Core logic: create/open a prefixed wiki-link target.
- *
- * @param app          Obsidian App instance
- * @param settings     Plugin settings
- * @param rawLinkText  The raw link text (e.g. "&My Note")
- * @param evt          The triggering event (MouseEvent or KeyboardEvent)
- * @returns true if the event was handled, false to let Obsidian handle it
  */
 export async function processLinkText(
   app: App,
   settings: SmartNotePlacementSettings,
   rawLinkText: string,
-  evt: Event
+  evt: Event,
+  logger: Logger
 ): Promise<boolean> {
-  const { sameFolderPrefix, folderNotePrefix } = settings;
+  const resolved = resolvePrefix(settings, rawLinkText);
+  if (!resolved) return false;
 
-  let prefix: string | null = null;
-  if (rawLinkText.startsWith(sameFolderPrefix)) {
-    prefix = sameFolderPrefix;
-  } else if (rawLinkText.startsWith(folderNotePrefix)) {
-    prefix = folderNotePrefix;
-  }
-
-  if (!prefix) return false;
+  const { prefix, config } = resolved;
 
   // Only intercept unresolved (not-yet-existing) links
   if (linkTargetExists(app, rawLinkText, "")) return false;
@@ -131,14 +184,15 @@ export async function processLinkText(
 
   let targetFolderPath: string;
 
-  if (prefix === sameFolderPrefix) {
-    // & prefix: same folder as current file
+  if (config.kind === "sameFolder") {
     targetFolderPath = activeFile.parent?.path ?? "";
+  } else if (config.kind === "folderNote") {
+    const resolvedFolder = await resolveFolderNoteTarget(app, activeFile, logger);
+    if (resolvedFolder === null) return true; // error already shown
+    targetFolderPath = resolvedFolder;
   } else {
-    // @ prefix: folder-note logic
-    const resolved = await resolveFolderNoteTarget(app, activeFile);
-    if (resolved === null) return true; // error already shown
-    targetFolderPath = resolved;
+    // custom
+    targetFolderPath = config.folder ?? "";
   }
 
   const newFilePath = normalizePath(
@@ -152,13 +206,19 @@ export async function processLinkText(
     return true;
   }
 
+  let newFile: TFile;
   try {
-    await app.vault.create(newFilePath, "");
+    newFile = await app.vault.create(newFilePath, "");
   } catch (err) {
+    logger.error(`Failed to create "${newFilePath}":`, err);
     new Notice(
       `Smart Note Placement: Failed to create "${newFilePath}". ${String(err)}`
     );
     return true;
+  }
+
+  if (config.template) {
+    await applyTemplate(app, newFile, config.template, logger);
   }
 
   // Rewrite the link in the (possibly moved) source file.
@@ -174,7 +234,8 @@ export async function processLinkText(
     currentSourceFile,
     rawLinkText,
     relativePath,
-    fileName
+    fileName,
+    logger
   );
 
   await app.workspace.openLinkText(fileName, currentSourceFile.path);
@@ -183,20 +244,15 @@ export async function processLinkText(
 
 /**
  * Handle a prefixed wiki-link click.
- *
- * @param app        Obsidian App instance
- * @param settings   Plugin settings
- * @param target     The clicked HTML element
- * @param evt        The original MouseEvent (so we can call preventDefault)
- * @returns true if the event was handled, false to let Obsidian handle it
  */
 export async function handleLinkClick(
   app: App,
   settings: SmartNotePlacementSettings,
   target: HTMLElement,
-  evt: MouseEvent
+  evt: MouseEvent,
+  logger: Logger
 ): Promise<boolean> {
   const rawLinkText = extractLinkText(target);
   if (!rawLinkText) return false;
-  return processLinkText(app, settings, rawLinkText, evt);
+  return processLinkText(app, settings, rawLinkText, evt, logger);
 }

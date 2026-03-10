@@ -5,12 +5,15 @@ import {
   SmartNotePlacementSettingTab,
 } from "./settings";
 import { getLinkTextAtCursor, handleLinkClick, processLinkText } from "./linkHandler";
+import { Logger, createLogger } from "./logger";
 
 export default class SmartNotePlacementPlugin extends Plugin {
   settings: SmartNotePlacementSettings = DEFAULT_SETTINGS;
+  logger: Logger = createLogger(false);
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.logger = createLogger(this.settings.debugLogging);
     this.addSettingTab(new SmartNotePlacementSettingTab(this.app, this));
 
     this.registerDomEvent(
@@ -28,8 +31,8 @@ export default class SmartNotePlacementPlugin extends Plugin {
         if (!isInternalLink) return;
 
         // Fire-and-forget; errors are surfaced via Notice inside handleLinkClick
-        handleLinkClick(this.app, this.settings, target, evt).catch((err) => {
-          console.error("Smart Note Placement: unexpected error", err);
+        handleLinkClick(this.app, this.settings, target, evt, this.logger).catch((err) => {
+          this.logger.error("Smart Note Placement: unexpected error", err);
         });
       },
       { capture: true }
@@ -49,9 +52,9 @@ export default class SmartNotePlacementPlugin extends Plugin {
         const rawLinkText = getLinkTextAtCursor(view.editor);
         if (!rawLinkText) return;
 
-        processLinkText(this.app, this.settings, rawLinkText, evt).catch(
+        processLinkText(this.app, this.settings, rawLinkText, evt, this.logger).catch(
           (err) => {
-            console.error("Smart Note Placement: unexpected error", err);
+            this.logger.error("Smart Note Placement: unexpected error", err);
           }
         );
       },
@@ -69,5 +72,6 @@ export default class SmartNotePlacementPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    this.logger = createLogger(this.settings.debugLogging);
   }
 }

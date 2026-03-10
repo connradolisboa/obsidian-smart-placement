@@ -1,5 +1,6 @@
 import { App, Notice, TFile, TFolder } from "obsidian";
 import { normalizePath } from "obsidian";
+import type { Logger } from "./logger";
 
 export function isFolderNote(app: App, file: TFile): boolean {
   const folderPath = file.path.replace(/\.md$/, "");
@@ -21,7 +22,8 @@ export function isFolderNote(app: App, file: TFile): boolean {
  */
 export async function resolveFolderNoteTarget(
   app: App,
-  currentFile: TFile
+  currentFile: TFile,
+  logger: Logger
 ): Promise<string | null> {
   if (isFolderNote(app, currentFile)) {
     // Case A: folder already exists alongside this file
@@ -43,6 +45,7 @@ export async function resolveFolderNoteTarget(
       await app.vault.createFolder(newFolderPath);
     }
   } catch (err) {
+    logger.error(`Failed to create folder "${newFolderPath}":`, err);
     new Notice(
       `Smart Note Placement: Failed to create folder "${newFolderPath}". ${String(err)}`
     );
@@ -53,6 +56,7 @@ export async function resolveFolderNoteTarget(
     // Move current file into the new folder, preserving backlinks
     await app.fileManager.renameFile(currentFile, newFilePath);
   } catch (err) {
+    logger.error(`Failed to move "${currentFile.path}" to "${newFilePath}":`, err);
     new Notice(
       `Smart Note Placement: Failed to move "${currentFile.path}" to "${newFilePath}". ${String(err)}`
     );

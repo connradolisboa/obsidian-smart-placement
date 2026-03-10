@@ -6,6 +6,5 @@
   "description": "Intercepts wiki-link clicks and redirects file creation based on prefix characters.",
   "author": "connrado",
   "authorUrl": "",
-  "fundingUrl": "",
-  "isDesktopOnly": true
+  "fundingUrl": ""
 }
