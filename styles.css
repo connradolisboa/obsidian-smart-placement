@@ -1,1 +1,21 @@
-/* Smart Note Placement - no custom styles needed */
+/* Smart Note Placement */
+
+/*
+ * Custom prefix rows contain three text inputs + a Remove button.
+ * On narrow screens (mobile) we let the controls wrap so each input
+ * gets its own line instead of overflowing off-screen.
+ */
+.snp-custom-prefix-row .setting-item-control {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.snp-custom-prefix-row .setting-item-control input[type="text"] {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+/* Keep the Remove button from stretching to full width when wrapping */
+.snp-custom-prefix-row .setting-item-control button {
+  flex: 0 0 auto;
+}

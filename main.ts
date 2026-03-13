@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin } from "obsidian";
+import { MarkdownView, Notice, Plugin } from "obsidian";
 import {
   SmartNotePlacementSettings,
   DEFAULT_SETTINGS,
@@ -60,6 +60,29 @@ export default class SmartNotePlacementPlugin extends Plugin {
       },
       { capture: true }
     );
+
+    // Command palette entry — primary way to trigger the plugin on mobile
+    // where keyboard shortcuts are unavailable.
+    this.addCommand({
+      id: "follow-smart-link",
+      name: "Follow smart link at cursor",
+      editorCallback: (editor) => {
+        const rawLinkText = getLinkTextAtCursor(editor);
+        if (!rawLinkText) {
+          new Notice("Smart Note Placement: No link found at cursor.");
+          return;
+        }
+        processLinkText(
+          this.app,
+          this.settings,
+          rawLinkText,
+          new Event("command"),
+          this.logger
+        ).catch((err) => {
+          this.logger.error("Smart Note Placement: unexpected error", err);
+        });
+      },
+    });
   }
 
   onunload(): void {

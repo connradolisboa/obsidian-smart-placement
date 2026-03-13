@@ -142,7 +142,9 @@ export class SmartNotePlacementSettingTab extends PluginSettingTab {
     const { customPrefixes } = this.plugin.settings;
     for (let i = 0; i < customPrefixes.length; i++) {
       const entry = customPrefixes[i];
-      const row = new Setting(containerEl)
+      const row = new Setting(containerEl);
+      row.settingEl.addClass("snp-custom-prefix-row");
+      row
         .addText((text) =>
           text
             .setPlaceholder("prefix")

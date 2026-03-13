@@ -3,8 +3,13 @@ import { normalizePath } from "obsidian";
 import type { Logger } from "./logger";
 
 export function isFolderNote(app: App, file: TFile): boolean {
-  const folderPath = file.path.replace(/\.md$/, "");
-  return !!(app.vault.getAbstractFileByPath(folderPath) instanceof TFolder);
+  // Case 1: sibling folder pattern — Business.md alongside Business/
+  const siblingFolderPath = file.path.replace(/\.md$/, "");
+  if (app.vault.getAbstractFileByPath(siblingFolderPath) instanceof TFolder) {
+    return true;
+  }
+  // Case 2: inside-folder pattern — Business/Business.md
+  return file.basename === file.parent?.name;
 }
 
 /**
@@ -26,8 +31,13 @@ export async function resolveFolderNoteTarget(
   logger: Logger
 ): Promise<string | null> {
   if (isFolderNote(app, currentFile)) {
-    // Case A: folder already exists alongside this file
-    return currentFile.path.replace(/\.md$/, "");
+    // Case A1: sibling folder pattern — Business.md → Business/
+    const siblingFolderPath = currentFile.path.replace(/\.md$/, "");
+    if (app.vault.getAbstractFileByPath(siblingFolderPath) instanceof TFolder) {
+      return siblingFolderPath;
+    }
+    // Case A2: inside-folder pattern — Business/Business.md → Business/
+    return currentFile.parent?.path ?? "";
   }
 
   // Case B: promote current file into a folder note
