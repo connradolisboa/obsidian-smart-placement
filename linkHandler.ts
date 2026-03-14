@@ -169,10 +169,20 @@ export async function processLinkText(
   evt.preventDefault();
   evt.stopPropagation();
 
-  const fileName = rawLinkText.slice(prefix.length).trim();
+  let fileName = rawLinkText.slice(prefix.length).trim();
   if (!fileName) {
     new Notice("Smart Note Placement: Link text after prefix is empty.");
     return true;
+  }
+
+  if (fileName.toLowerCase() === "now") {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const min = String(d.getMinutes()).padStart(2, "0");
+    fileName = `${yyyy}-${mm}-${dd} ${hh}${min}`;
   }
 
   // Determine source file (the currently active editor's file)
