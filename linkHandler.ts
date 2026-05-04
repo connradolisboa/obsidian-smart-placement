@@ -231,7 +231,13 @@ export async function processLinkText(
   let targetFolderPath: string;
 
   if (config.kind === "sameFolder") {
-    targetFolderPath = activeFile.parent?.path ?? "";
+    // Inside-folder note (e.g. Business/Business.md): & goes to the folder
+    // that contains Business/, not into Business/ itself.
+    if (activeFile.basename === activeFile.parent?.name) {
+      targetFolderPath = activeFile.parent?.parent?.path ?? "";
+    } else {
+      targetFolderPath = activeFile.parent?.path ?? "";
+    }
   } else if (config.kind === "folderNote") {
     const resolvedFolder = await resolveFolderNoteTarget(app, activeFile, logger);
     if (resolvedFolder === null) return true; // error already shown
