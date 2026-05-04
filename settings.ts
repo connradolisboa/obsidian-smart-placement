@@ -163,15 +163,17 @@ export class SmartNotePlacementSettingTab extends PluginSettingTab {
               await this.plugin.saveSettings();
             })
         )
-        .addText((text) =>
+        .addText((text) => {
           text
-            .setPlaceholder("folder path")
+            .setPlaceholder("folder path (supports {year} {month} {quarter} {day} {week} {weekday})")
             .setValue(entry.folder)
             .onChange(async (value) => {
               entry.folder = value.trim();
               await this.plugin.saveSettings();
-            })
-        )
+            });
+          text.inputEl.style.width = "22em";
+          return text;
+        })
         .addText((text) =>
           text
             .setPlaceholder("template path (optional)")

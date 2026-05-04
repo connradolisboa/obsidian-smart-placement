@@ -9,6 +9,42 @@ type PrefixConfig = {
   template?: string;
 };
 
+/**
+ * Replace date tokens in a folder path string.
+ *
+ * Supported tokens:
+ *   {year}     – 4-digit year           e.g. 2026
+ *   {month}    – 2-digit month          e.g. 03
+ *   {quarter}  – quarter label          e.g. Q1
+ *   {day}      – 2-digit day            e.g. 14
+ *   {week}     – ISO week number (01-53) e.g. 11
+ *   {weekday}  – full weekday name      e.g. Saturday
+ */
+export function resolveDateTokens(path: string, date: Date = new Date()): string {
+  const yyyy = String(date.getFullYear());
+  const mm   = String(date.getMonth() + 1).padStart(2, "0");
+  const dd   = String(date.getDate()).padStart(2, "0");
+  const q    = `Q${Math.ceil((date.getMonth() + 1) / 3)}`;
+
+  // ISO week number
+  const dayOfWeek = date.getDay() === 0 ? 7 : date.getDay(); // Mon=1 … Sun=7
+  const thursday  = new Date(date);
+  thursday.setDate(date.getDate() - dayOfWeek + 4);
+  const jan1      = new Date(thursday.getFullYear(), 0, 1);
+  const week      = String(Math.ceil(((thursday.getTime() - jan1.getTime()) / 86400000 + 1) / 7)).padStart(2, "0");
+
+  const weekdayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const weekday = weekdayNames[date.getDay()];
+
+  return path
+    .replace(/\{year\}/g,    yyyy)
+    .replace(/\{month\}/g,   mm)
+    .replace(/\{quarter\}/g, q)
+    .replace(/\{day\}/g,     dd)
+    .replace(/\{week\}/g,    week)
+    .replace(/\{weekday\}/g, weekday);
+}
+
 function resolvePrefix(
   settings: SmartNotePlacementSettings,
   rawLinkText: string
@@ -202,7 +238,7 @@ export async function processLinkText(
     targetFolderPath = resolvedFolder;
   } else {
     // custom
-    targetFolderPath = config.folder ?? "";
+    targetFolderPath = resolveDateTokens(config.folder ?? "");
   }
 
   const newFilePath = normalizePath(
